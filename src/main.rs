@@ -20,7 +20,7 @@ struct SnakeMoveTimer(Timer);
 struct Velocity(Vec2);
 
 struct Moved(bool);
-struct KeyQueue(Vec<Vec2>);
+struct MoveQueue(Vec<Vec2>);
 
 struct Food;
 
@@ -34,7 +34,7 @@ fn main() {
     .add_event::<GrowEvent>()
     .add_event::<GameOverEvent>()
     .insert_resource(Moved(true))
-    .insert_resource(KeyQueue(vec![Vec2::splat(0.0)]))
+    .insert_resource(MoveQueue(vec![Vec2::splat(0.0)]))
     .insert_resource(ClearColor(Color::rgb(0.0, 0.0, 0.0)))
     .insert_resource(GameWorld { grid_size: 20.0 })
     .insert_resource(SnakeMoveTimer(Timer::from_seconds(0.1, true)))
@@ -117,22 +117,13 @@ fn update(
   mut snake_body: Query<(&SnakeBody, &mut Transform), With<SnakeBody>>,
   mut game_over: EventWriter<GameOverEvent>,
   mut moved: ResMut<Moved>,
-  mut key_queue: ResMut<KeyQueue>,
 ) {
   if timer.0.tick(time.delta()).just_finished() {
     if let Ok((mut transform, velocity)) = query.single_mut() {
       let old_transform = transform.clone();
 
-      if key_queue.0[0] != Vec2::splat(0.0) {
-        for vec2 in key_queue.0.iter_mut() {
-          transform.translation.y += vec2.y * world.grid_size;
-          transform.translation.x += vec2.x * world.grid_size;
-        }
-      } else {
-        transform.translation.y += velocity.0.y * world.grid_size;
-        transform.translation.x += velocity.0.x * world.grid_size;
-      }
-      key_queue.0 = vec![Vec2::splat(0.0)];
+      transform.translation.y += velocity.0.y * world.grid_size;
+      transform.translation.x += velocity.0.x * world.grid_size;
 
       moved.0 = true;
 
@@ -172,7 +163,7 @@ fn keyboard_input(
   keyboard_input: Res<Input<KeyCode>>,
   mut query: Query<&mut Velocity, With<Snake>>,
   mut moved: ResMut<Moved>,
-  mut key_queue: ResMut<KeyQueue>,
+  mut move_queue: ResMut<MoveQueue>,
 ) {
   if let Ok(mut velocity) = query.single_mut() {
     let mut new_velocity = velocity.0;
@@ -194,40 +185,58 @@ fn keyboard_input(
       }
     }
     if moved.0 == true {
+      if move_queue.0[0] != Vec2::splat(0.0) {
+        velocity.0 = move_queue.0[0];
+        move_queue.0[0] = Vec2::splat(0.0);
+      }
       velocity.0 = new_velocity;
       moved.0 = false;
     } else if new_velocity != velocity.0 {
-      key_queue.0[0] = new_velocity;
+      move_queue.0[0] = new_velocity;
     }
   }
 }
 
-fn spawn_food(mut commands: Commands, world: Res<GameWorld>, food: Query<&Food>) {
+fn spawn_food(
+  mut commands: Commands,
+  world: Res<GameWorld>,
+  food: Query<&Food>,
+  snake: Query<&Transform, Or<(With<Snake>, With<SnakeBody>)>>,
+) {
   if let Err(_) = food.single() {
+    let snake_pos: Vec<Vec3> = snake.iter().map(|m| m.translation).collect();
+    let mut search_new = true;
     let mut rng = thread_rng();
-
     let shape = shapes::RegularPolygon {
       sides: 4,
       feature: shapes::RegularPolygonFeature::SideLength(world.grid_size),
       ..shapes::RegularPolygon::default()
     };
 
-    let x =
-      rng.gen_range(-WINDOW_W / 2.0 / world.grid_size + 1.0..WINDOW_W / 2.0 / world.grid_size);
-    let y =
-      rng.gen_range(-WINDOW_H / 2.0 / world.grid_size + 1.0..WINDOW_H / 2.0 / world.grid_size);
-    let x = x.floor() * world.grid_size;
-    let y = y.floor() * world.grid_size;
+    while search_new == true {
+      let x =
+        rng.gen_range(-WINDOW_W / 2.0 / world.grid_size + 1.0..WINDOW_W / 2.0 / world.grid_size);
+      let y =
+        rng.gen_range(-WINDOW_H / 2.0 / world.grid_size + 1.0..WINDOW_H / 2.0 / world.grid_size);
+      let x = x.floor() * world.grid_size;
+      let y = y.floor() * world.grid_size;
 
-    commands
-      .spawn()
-      .insert_bundle(GeometryBuilder::build_as(
-        &shape,
-        ShapeColors::outlined(Color::RED, Color::RED),
-        DrawMode::Fill(FillOptions::default()),
-        Transform::from_xyz(x, y, 0.0),
-      ))
-      .insert(Food);
+      let xy_compare = Vec3::new(x, y, 0.0);
+      if snake_pos.contains(&xy_compare) {
+        search_new = true
+      } else {
+        search_new = false;
+        commands
+          .spawn()
+          .insert_bundle(GeometryBuilder::build_as(
+            &shape,
+            ShapeColors::outlined(Color::RED, Color::RED),
+            DrawMode::Fill(FillOptions::default()),
+            Transform::from_xyz(x, y, 0.0),
+          ))
+          .insert(Food);
+      }
+    }
   }
 }
 
