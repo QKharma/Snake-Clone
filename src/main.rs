@@ -163,7 +163,7 @@ fn keyboard_input(
   keyboard_input: Res<Input<KeyCode>>,
   mut query: Query<&mut Velocity, With<Snake>>,
   mut moved: ResMut<Moved>,
-  mut move_queue: ResMut<MoveQueue>,
+  mut move_queue: ResMut<MoveQueue>
 ) {
   if let Ok(mut velocity) = query.single_mut() {
     let mut new_velocity = velocity.0;
@@ -187,13 +187,12 @@ fn keyboard_input(
     if moved.0 == true {
       if move_queue.0[0] != Vec2::splat(0.0) {
         velocity.0 = move_queue.0[0];
-        move_queue.0[0] = Vec2::splat(0.0);
+        move_queue.0 = vec![Vec2::splat(0.0)];
       }
       velocity.0 = new_velocity;
       moved.0 = false;
-    } else if new_velocity != velocity.0 {
-      move_queue.0[0] = new_velocity;
     }
+    move_queue.0[0] = new_velocity;
   }
 }
 
